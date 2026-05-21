@@ -29,7 +29,7 @@ Auto-discovery registra o provider e a Facade `License`.
 ### Configuração (`.env`)
 
 ```env
-LICENSE_MANAGER_URL=https://license.finatto.com.br
+LICENSE_MANAGER_URL=https://license.test
 
 # opcionais
 LICENSE_HTTP_TIMEOUT=10
@@ -95,4 +95,4 @@ vendor/bin/phpstan analyse
 
 ## Licença
 
-Proprietário · Finatto Tecnologia.
+Proprietário
