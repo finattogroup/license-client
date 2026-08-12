@@ -21,11 +21,12 @@ final class LicenseApiClient
         try {
             $response = $this->baseRequest()->post($this->activationUrl('/v1/activations'), ['voucher' => $voucher, 'csr' => $csr]);
         } catch (\Throwable $e) {
-            throw new ActivationException('The key service could not be reached for activation.', previous: $e);
+            throw new ActivationException('The key service could not be reached for activation.', 'service_unavailable', previous: $e);
         }
         if (! $response->created()) {
-            $code = $response->json('error.code', 'activation_failed');
-            throw new ActivationException("Activation was rejected ({$code}).");
+            $code = $response->json('error', 'activation_failed');
+            $reason = is_string($code) && $code !== '' ? $code : 'activation_failed';
+            throw new ActivationException("Activation was rejected ({$reason}).", $reason, $response->status());
         }
         $data = $response->json();
         if (! is_array($data)) throw new ActivationException('The activation response is invalid.');
