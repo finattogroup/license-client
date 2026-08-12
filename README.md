@@ -1,98 +1,83 @@
-# finatto/license-client
+# Finatto License Client
 
-Cliente Laravel para a **Finatto License Manager**. Recebe as credenciais de
-cada tenant em tempo de execução e expõe uma API tipada, escondendo HTTP,
-tokens e cache da aplicação consumidora.
+Laravel package used by Finatto products to activate and consume licenses. It
+talks only to the key-service. The private key is generated locally, stored with
+restricted filesystem permissions, and never sent over the network.
 
-```php
-use Finatto\LicenseClient\Facades\License;
-
-$license = License::for($tenant->serial_key, $tenant->cnpj);
-
-if (! $license->hasModule('fleet')) {
-    abort(403);
-}
-```
-
-> As credenciais pertencem à aplicação (uma por tenant, persistidas onde o
-> cliente decidir) — o pacote apenas as transporta.
-
-## Instalação
+## Install
 
 ```bash
 composer require finatto/license-client
 php artisan vendor:publish --tag=license-client-config
 ```
 
-Auto-discovery registra o provider e a Facade `License`.
+The production key-service URLs are the defaults. They can be overridden when
+needed:
 
-### Configuração (`.env`)
-
-```env
-LICENSE_MANAGER_URL=https://license.test
-
-# opcionais
-LICENSE_HTTP_TIMEOUT=10
-LICENSE_HTTP_RETRY_TIMES=2
-LICENSE_TOKEN_LEEWAY=60
-LICENSE_SNAPSHOT_TTL=300
-LICENSE_CACHE_STORE=
+```dotenv
+FINATTO_KEY_SERVICE_URL=https://key-service.memphislab.com.br
+FINATTO_KEY_SERVICE_LICENSE_URL=https://key-service.memphislab.com.br:8443
 ```
 
-## Uso
+## Activate once
 
-### Por tenant
+The license-manager provisions `FINATTO_LICENSE_ACTIVATION_VOUCHER`. The client
+uses only that voucher; the key-service resolves and returns the license serial.
 
 ```php
 use Finatto\LicenseClient\Facades\License;
 
-$license = License::for($tenant->serial_key, $tenant->cnpj);
-
-$license->snapshot();             // cacheado por LICENSE_SNAPSHOT_TTL
-$license->fresh();                // ignora o cache
-$license->isActive();
-$license->hasModule('checklist');
-$license->token();
-$license->flush();
-
-$snapshot = $license->snapshot();
-$snapshot->tenant->legalName;
-$snapshot->subscription?->plan?->maxVehicles;
-$snapshot->moduleCodes();
+$activation = License::activate(config('services.finatto.activation_voucher'));
+$activation->serial;
 ```
 
-### Tenant atual via resolver
+After activation, the certificate, private key and pinned PASETO public keys are
+kept in `storage/app/finatto-license`. Persist this directory across deployments
+and never commit or expose it.
+
+## Use the license
 
 ```php
-use Finatto\LicenseClient\Data\LicenseCredentials;
-use Finatto\LicenseClient\Facades\License;
+License::isActivated();
+License::serial();
+License::isActive();
+License::product();                 // "frota"
+License::productData();             // key, plan, status, environment, is_trial
+License::licenseKey();              // activation serial
+License::plan();                    // "enterprise"
+License::status();
+License::isTrial();
+License::inGracePeriod();
 
-License::resolveUsing(fn () => LicenseCredentials::make(
-    serialKey: CurrentTenant::get()->serial_key,
-    document:  CurrentTenant::get()->cnpj,
-));
+License::hasEntitlement('tracking');
+License::entitlement('tracking');
+License::integerLimit('concurrent-users');
+License::allowsUsage('concurrent-users', $activeUsers);
 
-License::hasModule('fleet');
-License::snapshot();
+License::hasFeature('new-dashboard');
+License::hasCanaryFeature('route-canary');
+License::hasAnyFeature(['route-canary', 'beta-map']);
+License::hasAllFeatures(['new-dashboard', 'route-canary']);
+License::canaryFeatures();
+
+License::tenant();
+License::setting('system_url');
 ```
 
-## Erros
+`snapshot()` returns the cached, verified license. `fresh()` forces a network
+refresh. Both throw on activation, network, signature or license errors. For
+non-critical UI paths, `trySnapshot()` returns `null` on failure. Authorization
+checks should use the strict methods and fail closed.
 
-Todas as exceções estendem `LicenseClientException`:
+```php
+$license = License::snapshot();
 
-| Exceção | |
-|---|---|
-| `InvalidSerialKeyException` | serial key ausente ou inválida |
-| `AuthenticationException` | falha ao autenticar — expõe `->oauthError` e `->status` |
-| `LicenseRequestException` | falha ao consultar a licença — expõe `->status` |
-
-## Análise estática
-
-```bash
-composer install
-vendor/bin/phpstan analyse
+$license->entitlements;
+$license->limits;
+$license->features();
+$license->expiresAt;
+$license->graceEndsAt();
 ```
 
-## Licença
-
-Proprietário
+Use `License::deactivate()` only when intentionally removing the local client
+certificate and private key.

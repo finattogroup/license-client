@@ -4,92 +4,64 @@ declare(strict_types=1);
 
 namespace Finatto\LicenseClient\Http;
 
-use Finatto\LicenseClient\Data\AccessToken;
-use Finatto\LicenseClient\Exceptions\AuthenticationException;
+use Finatto\LicenseClient\Data\ClientCredentials;
+use Finatto\LicenseClient\Exceptions\ActivationException;
 use Finatto\LicenseClient\Exceptions\LicenseRequestException;
-use Finatto\LicenseClient\Support\SerialKey;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\Response;
 
-final readonly class LicenseApiClient
+final class LicenseApiClient
 {
-    /**
-     * @param  array{base_url: string, http: array{timeout: int, retry_times: int, retry_sleep: int}}  $config
-     */
-    public function __construct(
-        private HttpFactory $http,
-        private array       $config,
-    ) {}
+    /** @param array<string, mixed> $config */
+    public function __construct(private readonly Factory $http, private readonly array $config) {}
 
-    public function requestToken(SerialKey $serialKey, string $document): AccessToken
+    /** @return array<string, mixed> */
+    public function activate(string $voucher, string $csr): array
     {
-        $response = $this->send(fn (PendingRequest $request): Response => $request->post('/api/v1/oauth/token', [
-            'grant_type' => 'client_credentials',
-            'client_id' => $serialKey->clientId,
-            'client_secret' => $serialKey->clientSecret,
-            'document' => $document,
-        ]));
-
-        if ($response->failed()) {
-            throw AuthenticationException::fromResponse(
-                status: $response->status(),
-                error: $response->json('error'),
-                description: $response->json('error_description'),
-            );
-        }
-
-        /** @var array{access_token: string, token_type?: string, expires_in?: int, scope?: string|null} $payload */
-        $payload = $response->json();
-
-        return AccessToken::fromResponse($payload);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function fetchLicense(string $authorizationHeader): array
-    {
-        $response = $this->send(fn (PendingRequest $request): Response => $request
-            ->withHeader('Authorization', $authorizationHeader)
-            ->get('/api/v1/license'));
-
-        if ($response->failed()) {
-            throw new LicenseRequestException(
-                "GET /api/v1/license responded {$response->status()}.",
-                $response->status(),
-            );
-        }
-
-        /** @var array<string, mixed> $payload */
-        $payload = $response->json();
-
-        return $payload;
-    }
-
-    /**
-     * @param  callable(PendingRequest): Response  $callback
-     */
-    private function send(callable $callback): Response
-    {
-        $request = $this->http
-            ->baseUrl(rtrim($this->config['base_url'], '/'))
-            ->acceptJson()
-            ->asJson()
-            ->timeout($this->config['http']['timeout'])
-            ->retry(
-                $this->config['http']['retry_times'],
-                $this->config['http']['retry_sleep'],
-                throw: false,
-            );
-
         try {
-            return $callback($request);
-        } catch (ConnectionException $e) {
-            throw new LicenseRequestException(
-                "Could not reach the License Manager: {$e->getMessage()}",
-            );
+            $response = $this->baseRequest()->post($this->activationUrl('/v1/activations'), ['voucher' => $voucher, 'csr' => $csr]);
+        } catch (\Throwable $e) {
+            throw new ActivationException('The key service could not be reached for activation.', previous: $e);
         }
+        if (! $response->created()) {
+            $code = $response->json('error.code', 'activation_failed');
+            throw new ActivationException("Activation was rejected ({$code}).");
+        }
+        $data = $response->json();
+        if (! is_array($data)) throw new ActivationException('The activation response is invalid.');
+        foreach (['serial', 'certificate', 'ca_chain', 'keys'] as $field) if (! isset($data[$field])) throw new ActivationException("The activation response is missing {$field}.");
+        return $data;
     }
+
+    /** @return array<string, mixed> */
+    public function license(ClientCredentials $credentials): array
+    {
+        try {
+            $response = $this->baseRequest()->withOptions([
+                'cert' => $credentials->certificatePath,
+                'ssl_key' => $credentials->privateKeyPath,
+            ])->get($this->licenseUrl('/v1/license'));
+        } catch (\Throwable $e) {
+            throw new LicenseRequestException('The key service could not be reached.', previous: $e);
+        }
+        if (! $response->successful()) throw new LicenseRequestException("The key service rejected the license request ({$response->status()}).");
+        $data = $response->json();
+        if (! is_array($data) || ! is_string($data['license_token'] ?? null)) throw new LicenseRequestException('The key service returned an invalid license response.');
+        return $data;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function keys(): array
+    {
+        $response = $this->baseRequest()->get($this->activationUrl('/v1/keys'));
+        if (! $response->successful() || ! is_array($response->json('keys'))) throw new LicenseRequestException('Could not refresh license verification keys.');
+        return array_values(array_filter($response->json('keys'), 'is_array'));
+    }
+
+    private function baseRequest(): PendingRequest
+    {
+        return $this->http->acceptJson()->asJson()->timeout((int) ($this->config['timeout'] ?? 10))->connectTimeout((int) ($this->config['connect_timeout'] ?? 5));
+    }
+    private function activationUrl(string $path): string { return rtrim((string) $this->config['base_url'], '/').$path; }
+    private function licenseUrl(string $path): string { return rtrim((string) ($this->config['license_url'] ?? $this->config['base_url']), '/').$path; }
 }

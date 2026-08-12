@@ -9,11 +9,13 @@
         "illuminate/http": "^13.0",
         "illuminate/cache": "^13.0",
         "illuminate/contracts": "^13.0",
-        "nesbot/carbon": "^3.0"
+        "nesbot/carbon": "^3.0",
+        "paragonie/paseto": "^3.5"
     },
     "require-dev": {
         "laravel/framework": "^13.0",
-        "phpstan/phpstan": "^2.0"
+        "phpstan/phpstan": "^2.0",
+        "phpunit/phpunit": "^12"
     },
     "autoload": {
         "psr-4": {

@@ -3,18 +3,16 @@
 declare(strict_types=1);
 
 return [
-    'base_url' => env('LICENSE_MANAGER_URL', 'https://license.test'),
-
-    'http' => [
-        'timeout' => (int) env('LICENSE_HTTP_TIMEOUT', 10),
-        'retry_times' => (int) env('LICENSE_HTTP_RETRY_TIMES', 2),
-        'retry_sleep' => (int) env('LICENSE_HTTP_RETRY_SLEEP', 200),
-    ],
-
+    'base_url' => env('FINATTO_KEY_SERVICE_URL', 'https://key-service.memphislab.com.br'),
+    'license_url' => env('FINATTO_KEY_SERVICE_LICENSE_URL', 'https://key-service.memphislab.com.br:8443'),
+    'issuer' => env('FINATTO_LICENSE_ISSUER', 'key-service'),
+    'timeout' => (int) env('FINATTO_LICENSE_TIMEOUT', 10),
+    'connect_timeout' => (int) env('FINATTO_LICENSE_CONNECT_TIMEOUT', 5),
+    'openssl_config' => env('FINATTO_LICENSE_OPENSSL_CONFIG'),
+    'credentials' => ['path' => env('FINATTO_LICENSE_PATH', storage_path('app/finatto-license'))],
     'cache' => [
-        'store' => env('LICENSE_CACHE_STORE'),
-        'prefix' => env('LICENSE_CACHE_PREFIX', 'finatto:license'),
-        'token_leeway' => (int) env('LICENSE_TOKEN_LEEWAY', 60),
-        'snapshot_ttl' => (int) env('LICENSE_SNAPSHOT_TTL', 300),
+        'store' => env('FINATTO_LICENSE_CACHE_STORE'),
+        'key' => env('FINATTO_LICENSE_CACHE_KEY', 'finatto:license:snapshot'),
+        'ttl' => (int) env('FINATTO_LICENSE_CACHE_TTL', 300),
     ],
 ];
