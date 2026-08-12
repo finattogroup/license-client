@@ -45,7 +45,7 @@ final class LicenseApiClient
         } catch (\Throwable $e) {
             throw new LicenseRequestException('The key service could not be reached.', previous: $e);
         }
-        if (! $response->successful()) throw new LicenseRequestException("The key service rejected the license request ({$response->status()}).");
+        if (! $response->successful()) throw new LicenseRequestException("The key service rejected the license request ({$response->status()}).", $response->status());
         $data = $response->json();
         if (! is_array($data) || ! is_string($data['license_token'] ?? null)) throw new LicenseRequestException('The key service returned an invalid license response.');
         return $data;
